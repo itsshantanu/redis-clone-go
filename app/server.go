@@ -19,9 +19,21 @@ func main() {
 		os.Exit(1)
 	}
 	conn, err := l.Accept()
+
+	for {
+		if err != nil {
+			fmt.Println("Error accepting connection: ", err.Error())
+			continue
+		}
+		go handleConnection(conn)
+	}
+}
+
+func handleConnection(conn net.Conn) {
+	buf := make([]byte, 1024)
+	_, err := conn.Read(buf)
 	if err != nil {
-		fmt.Println("Error accepting connection: ", err.Error())
-		os.Exit(1)
+		fmt.Println("Error Reading:", err.Error())
 	}
 	conn.Write([]byte("+PONG\r\n"))
 }
