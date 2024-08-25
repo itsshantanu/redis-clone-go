@@ -1,10 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
-	//Uncomment this block to pass the first stage
 	"net"
 	"os"
+	"strings"
 )
 
 func main() {
@@ -33,18 +34,72 @@ func main() {
 
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
-	buf := make([]byte, 1024)
+	reader := bufio.NewReader(conn)
 
 	for {
-		//Read data from the connection
-		n, err := conn.Read(buf)
+		// Parse the RESP command
+		command, args, err := parseRESP(reader)
 		if err != nil {
 			fmt.Println("Error Reading:", err.Error())
 			return
 		}
-		// Process the command
-		command := string(buf[:n])
-		fmt.Printf("Received Command: %s", command)
-		conn.Write([]byte("+PONG\r\n"))
+
+		// Handle the PING command
+		if strings.ToUpper(command) == "PING" {
+			conn.Write([]byte("+PONG\r\n"))
+		} else if strings.ToUpper(command) == "ECHO" && len(args) == 1 {
+			// Handle the ECHO command
+			response := fmt.Sprintf("$%d\r\n%s\r\n", len(args[0]), args[0])
+			conn.Write([]byte(response))
+		} else {
+			conn.Write([]byte("-ERR unknown command\r\n"))
+		}
 	}
+}
+
+func parseRESP(reader *bufio.Reader) (string, []string, error) {
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		return "", nil, err
+	}
+
+	if line[0] != '*' {
+		return "", nil, fmt.Errorf("expected array")
+	}
+
+	numArgs := 0
+	fmt.Sscanf(line, "*%d\r\n", &numArgs)
+
+	args := make([]string, numArgs)
+	for i := 0; i < numArgs; i++ {
+		// Read the bulk string header
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			return "", nil, err
+		}
+
+		if line[0] != '$' {
+			return "", nil, fmt.Errorf("expected bulk string")
+		}
+
+		argLen := 0
+		fmt.Sscanf(line, "$%d\r\n", &argLen)
+
+		// Read the argument
+		arg := make([]byte, argLen)
+		_, err = reader.Read(arg)
+		if err != nil {
+			return "", nil, err
+		}
+
+		// Read the trailing \r\n
+		_, err = reader.ReadString('\n')
+		if err != nil {
+			return "", nil, err
+		}
+
+		args[i] = string(arg)
+	}
+
+	return args[0], args[1:], nil
 }
