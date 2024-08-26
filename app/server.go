@@ -8,6 +8,8 @@ import (
 	"strings"
 )
 
+var store = make(map[string]string)
+
 func main() {
 	// You can use print statements as follows for debugging, they'll be visible when running tests.
 	fmt.Println("Logs from your program will appear here!")
@@ -44,14 +46,36 @@ func handleConnection(conn net.Conn) {
 			return
 		}
 
-		// Handle the PING command
-		if strings.ToUpper(command) == "PING" {
+		switch strings.ToUpper(command) {
+		case "PING":
 			conn.Write([]byte("+PONG\r\n"))
-		} else if strings.ToUpper(command) == "ECHO" && len(args) == 1 {
-			// Handle the ECHO command
-			response := fmt.Sprintf("$%d\r\n%s\r\n", len(args[0]), args[0])
-			conn.Write([]byte(response))
-		} else {
+		case "ECHO":
+			if len(args) == 1 {
+				response := fmt.Sprintf("$%d\r\n%s\r\n", len(args[0]), args[0])
+				conn.Write([]byte(response))
+			} else {
+				conn.Write([]byte("-ERR wrong number of arguments for 'echo' command\r\n"))
+			}
+		case "SET":
+			if len(args) == 2 {
+				store[args[0]] = args[1]
+				conn.Write([]byte("+OK\r\n"))
+			} else {
+				conn.Write([]byte("-ERR wrong number of arguments for 'set' command\r\n"))
+			}
+		case "GET":
+			if len(args) == 1 {
+				value, exists := store[args[0]]
+				if exists {
+					response := fmt.Sprintf("$%d\r\n%s\r\n", len(value), value)
+					conn.Write([]byte(response))
+				} else {
+					conn.Write([]byte("$-1\r\n"))
+				}
+			} else {
+				conn.Write([]byte("-ERR wrong number of arguments for 'get' command\r\n"))
+			}
+		default:
 			conn.Write([]byte("-ERR unknown command\r\n"))
 		}
 	}
