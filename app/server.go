@@ -6,9 +6,15 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
+	"time"
 )
 
-var store = make(map[string]string)
+var (
+	store      = make(map[string]string)
+	expiry     = make(map[string]*time.Timer)
+	expiryLock sync.Mutex
+)
 
 func main() {
 	// You can use print statements as follows for debugging, they'll be visible when running tests.
@@ -57,15 +63,37 @@ func handleConnection(conn net.Conn) {
 				conn.Write([]byte("-ERR wrong number of arguments for 'echo' command\r\n"))
 			}
 		case "SET":
-			if len(args) == 2 {
-				store[args[0]] = args[1]
+			if len(args) >= 2 {
+				key := args[0]
+				value := args[1]
+				store[key] = value
 				conn.Write([]byte("+OK\r\n"))
+
+				if len(args) == 4 && strings.ToUpper(args[2]) == "PX" {
+					expiryTime, err := time.ParseDuration(args[3] + "ms")
+					if err == nil {
+						expiryLock.Lock()
+						if timer, exists := expiry[key]; exists {
+							timer.Stop()
+						}
+						expiry[key] = time.AfterFunc(expiryTime, func() {
+							expiryLock.Lock()
+							delete(store, key)
+							delete(expiry, key)
+							expiryLock.Unlock()
+						})
+						expiryLock.Unlock()
+					}
+				}
 			} else {
 				conn.Write([]byte("-ERR wrong number of arguments for 'set' command\r\n"))
 			}
 		case "GET":
 			if len(args) == 1 {
-				value, exists := store[args[0]]
+				key := args[0]
+				expiryLock.Lock()
+				value, exists := store[key]
+				expiryLock.Unlock()
 				if exists {
 					response := fmt.Sprintf("$%d\r\n%s\r\n", len(value), value)
 					conn.Write([]byte(response))
