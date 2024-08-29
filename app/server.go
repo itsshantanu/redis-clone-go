@@ -14,9 +14,29 @@ var (
 	store      = make(map[string]string)
 	expiry     = make(map[string]*time.Timer)
 	expiryLock sync.Mutex
+	dir        string
+	dbfilename string
 )
 
+func parseArgs() {
+	for i := 0; i < len(os.Args); i++ {
+		switch os.Args[i] {
+		case "--dir":
+			if i+1 < len(os.Args) {
+				dir = os.Args[i+1]
+				i++
+			}
+		case "--dbfilename":
+			if i+1 < len(os.Args) {
+				dbfilename = os.Args[i+1]
+				i++
+			}
+		}
+	}
+}
+
 func main() {
+	parseArgs()
 	// You can use print statements as follows for debugging, they'll be visible when running tests.
 	fmt.Println("Logs from your program will appear here!")
 
@@ -102,6 +122,24 @@ func handleConnection(conn net.Conn) {
 				}
 			} else {
 				conn.Write([]byte("-ERR wrong number of arguments for 'get' command\r\n"))
+			}
+		case "CONFIG":
+			if len(args) == 2 && strings.ToUpper(args[0]) == "GET" {
+				param := args[1]
+				var value string
+				switch param {
+				case "dir":
+					value = dir
+				case "dbfilename":
+					value = dbfilename
+				default:
+					conn.Write([]byte("-ERR unknown parameter\r\n"))
+					continue
+				}
+				response := fmt.Sprintf("*2\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n", len(param), param, len(value), value)
+				conn.Write([]byte(response))
+			} else {
+				conn.Write([]byte("-ERR wrong number of arguments for 'CONFIG GET' command\r\n"))
 			}
 		default:
 			conn.Write([]byte("-ERR unknown command\r\n"))
